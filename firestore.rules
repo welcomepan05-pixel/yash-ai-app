@@ -1,0 +1,194 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && (request.auth.uid == userId || request.auth.token.email == "welcomepan05@gmail.com");
+    }
+
+    function isSystemOwner() {
+      return isAuthenticated() && request.auth.token.email == "welcomepan05@gmail.com";
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
+             (!('age' in data) || data.age is number) &&
+             (!('onboarded' in data) || data.onboarded is bool) &&
+             (!('credits' in data) || data.credits is number) &&
+             (!('streakCount' in data) || data.streakCount is number) &&
+             (!('lastActiveDate' in data) || data.lastActiveDate is string) &&
+             (!('customSystemPrompt' in data) || data.customSystemPrompt is string) &&
+             (!('preferredLanguage' in data) || data.preferredLanguage is string);
+    }
+
+    function isValidChat(data) {
+      return data.keys().hasAll(['userId', 'title', 'createdAt', 'updatedAt']) &&
+             data.userId is string &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp &&
+             (!('pinned' in data) || data.pinned is bool) &&
+             (!('folderId' in data) || (data.folderId is string || data.folderId == null));
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['chatId', 'role', 'content', 'createdAt']) &&
+             data.chatId is string &&
+             data.role in ['user', 'model'] &&
+             data.content is string && data.content.size() < 10000 &&
+             data.createdAt is timestamp &&
+             (!('bookmarked' in data) || data.bookmarked is bool) &&
+             (!('imageBase64' in data) || (data.imageBase64 is string || data.imageBase64 == null));
+    }
+
+    function isValidGeneratedImage(data) {
+      return data.keys().hasAll(['userId', 'prompt', 'imageUrl', 'createdAt']) &&
+             data.userId is string &&
+             data.prompt is string && data.prompt.size() < 1000 &&
+             data.imageUrl is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidPhotoEdit(data) {
+      return data.keys().hasAll(['userId', 'originalImageUrl', 'editedImageUrl', 'operation', 'createdAt']) &&
+             data.userId is string &&
+             data.originalImageUrl is string &&
+             data.editedImageUrl is string &&
+             data.operation is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidFolder(data) {
+      return data.keys().hasAll(['userId', 'name', 'createdAt']) &&
+             data.userId is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidMemory(data) {
+      return data.keys().hasAll(['userId', 'content', 'createdAt']) &&
+             data.userId is string &&
+             data.content is string && data.content.size() < 1000 &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidPrompt(data) {
+      return data.keys().hasAll(['userId', 'title', 'prompt', 'createdAt']) &&
+             data.userId is string &&
+             data.title is string && data.title.size() < 200 &&
+             data.prompt is string && data.prompt.size() < 5000 &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasAll(['userId', 'title', 'completed', 'createdAt']) &&
+             data.userId is string &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
+             data.completed is bool &&
+             data.createdAt is timestamp &&
+             (!('dueDate' in data) || (data.dueDate is timestamp || data.dueDate == null));
+    }
+
+    function isValidStickyNote(data) {
+      return data.keys().hasAll(['userId', 'content', 'color', 'createdAt']) &&
+             data.userId is string &&
+             data.content is string && data.content.size() < 2000 &&
+             data.color is string &&
+             data.createdAt is timestamp &&
+             (!('x' in data) || data.x is number) &&
+             (!('y' in data) || data.y is number);
+    }
+
+    function isValidAchievement(data) {
+      return data.keys().hasAll(['userId', 'type', 'title', 'unlockedAt']) &&
+             data.userId is string &&
+             data.type is string &&
+             data.title is string &&
+             data.unlockedAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidUser(request.resource.data);
+
+      match /chats/{chatId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidChat(request.resource.data);
+        allow update: if isOwner(userId) && isValidChat(request.resource.data);
+        allow delete: if isOwner(userId);
+
+        match /messages/{messageId} {
+          allow read: if isOwner(userId);
+          allow create: if isOwner(userId) && isValidMessage(request.resource.data);
+          allow update: if isOwner(userId) && isValidMessage(request.resource.data);
+          allow delete: if isOwner(userId);
+        }
+      }
+
+      match /generated_images/{imageId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidGeneratedImage(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /photo_edits/{editId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidPhotoEdit(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /folders/{folderId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidFolder(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /memories/{memoryId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidMemory(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /tasks/{taskId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidTask(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /sticky_notes/{noteId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidStickyNote(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /achievements/{achievementId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidAchievement(request.resource.data);
+      }
+    }
+
+    match /marketplace/{promptId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidPrompt(request.resource.data);
+      allow update: if isAuthenticated() && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']) || isSystemOwner());
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isSystemOwner());
+    }
+  }
+}
